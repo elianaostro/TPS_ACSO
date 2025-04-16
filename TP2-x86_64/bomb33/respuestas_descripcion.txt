@@ -1,0 +1,49 @@
+Nombre: Eliana Ostrovsky
+Email: Eostrovsky@udesa.edu.ar
+
+Fase 1:
+
+Esta fase compara la cadena ingresada con una cadena fija embebida en el ejecutable. En el código, se carga una dirección (lea rsi, [...]) donde está guardada esa cadena, 
+y se llama a la función strings_not_equal, que compara el input del usuario con esa cadena.
+
+Si la comparación falla (es decir, si las cadenas son distintas), llama a explode_bomb, lo que significa que la bomba explota. Si son iguales, se pasa de fase.
+
+Para encontrar la cadena correcta, debugueé la ejecución y observé que, al entrar en la función strings_not_equal, se actualizan los registros con la dirección de la 
+cadena esperada. Inspeccionando esa dirección en GDB, obtuve el string: "Cada uno es como Dios le hizo, y aun peor muchas veces."
+
+Fase 2:
+
+Esta fase toma dos números enteros como input, separados por espacio. Internamente, los convierte con strtol, y luego llama a una función llamada misterio, pasándole tres parámetros:
+
+    edi: una combinación entre los dos números (rbx + rax - 0x20),
+    esi: el primer número,
+    edx: el segundo número.
+
+La función misterio realiza un conteo de bits en el primer parámetro (edi), y espera que haya exactamente 11 bits en 1 (cmp edx, 0xb). Además, después hace un xor entre los dos 
+números originales y exige que el resultado sea negativo (js, o sea, que el bit de signo sea 1). Si no se cumple alguna de estas condiciones, explota la bomba.
+
+Lo resolví probando distintos valores. Encontré que el número 4127 tiene exactamente 11 bits en 1 en su representación binaria (0b100000001111), y que 4127 ^ -1 da un resultado 
+negativo, cumpliendo con la condición final. Por lo tanto, un input correcto es: 4127 -1
+
+Fase 3
+
+Esta fase lee una palabra y un número entero usando sscanf con el formato "%s %d". Luego carga el archivo palabras.txt con la función readlines y llama 
+a una función recursiva cuenta que compara y procesa palabras del diccionario. La función cuenta devuelve un valor numérico que debe ser mayor que 9999 
+(0x270F) y debe coincidir exactamente con el número que ingresamos.
+
+Analicé la función cuenta usando GDB para monitorear su comportamiento con diferentes entradas. Descubrí que la palabra "abreviar" genera un valor de 
+retorno de 11250, que cumple con el requisito de ser mayor que 9999. Por lo tanto, la entrada correcta es "abreviar 11250", donde el segundo número 
+debe coincidir exactamente con el resultado calculado por la función cuenta para la palabra específica.
+
+Fase 4:
+
+Esta fase toma como entrada dos números. Analizando el código ensamblador, descubrimos que el programa utiliza sscanf para leerlos y luego calcula 
+el valor del primer número módulo 16, usando la instrucción and eax, 0xf, lo cual nos da un índice inicial. Si este índice es 15, la bomba explota 
+inmediatamente. Si no, el código entra en un bucle que accede a un arreglo fijo en memoria (identificado en la dirección 0x4cde20) y va recorriendo 
+sus valores: cada valor leído se usa como el nuevo índice para la siguiente iteración. El bucle continúa hasta que se encuentra el valor 15. 
+Durante este proceso, se cuenta cuántos pasos se hicieron y se suma el total de los valores leídos. Al finalizar, se hacen dos verificaciones: 
+que se hayan recorrido exactamente 11 pasos y que el segundo número ingresado sea igual a la suma acumulada. 
+
+Para resolverlo, obtuve los valores del arreglo usando GDB y probe sistemáticamente cada posible índice inicial entre 0 y 14. 
+Encontre que comenzando en el índice 11, la secuencia de valores leídos era: 5 → 10 → 3 → 8 → 0 → 7 → 9 → 12 → 2 → 6 → 15, 
+que suma 77 y tiene exactamente 11 pasos. Por lo tanto, la entrada correcta para desactivar esta fase es: 11 77.
