@@ -47,3 +47,20 @@ que se hayan recorrido exactamente 11 pasos y que el segundo número ingresado s
 Para resolverlo, obtuve los valores del arreglo usando GDB y probe sistemáticamente cada posible índice inicial entre 0 y 14. 
 Encontre que comenzando en el índice 11, la secuencia de valores leídos era: 5 → 10 → 3 → 8 → 0 → 7 → 9 → 12 → 2 → 6 → 15, 
 que suma 77 y tiene exactamente 11 pasos. Por lo tanto, la entrada correcta para desactivar esta fase es: 11 77.
+
+Fase secreta:
+
+Esta fase corresponde a una parte oculta del binario llamada secret_phase, la cual no se ejecuta durante el flujo normal del programa. Para 
+activarla, es necesario cumplir una condición especial evaluada al final de la función phase_defused. Si, habiendo desactivado correctamente 
+todas las fases anteriores, se ingresaron tres valores usando el formato "%s %d %s", y el tercer valor es exactamente "abrete_sesamo", el programa 
+considera que se cumplió la condición secreta y ejecuta secret_phase. 
+
+Esta fase llama a la función fun7, que realiza una búsqueda en un árbol binario. El objetivo es encontrar un número tal que fun7 retorne 3. 
+Analizando el código, descubrí que esto ocurre si la búsqueda toma el camino derecho dos veces y luego encuentra el valor buscado. En ese caso, 
+la función retorna 0, y las llamadas anteriores aplican la fórmula (retorno * 2 + 1) dos veces, lo que da como resultado 3.
+
+Utilicé GDB para explorar la estructura del árbol en memoria, comenzando desde la dirección raíz (0x4f91f0). Siguiendo los punteros de los hijos 
+(izquierdo: offset +8, derecho: offset +16), anoté los valores de cada nodo. Descubrí que el camino "derecha, derecha" desde la raíz (valor 36) 
+lleva al nodo 50, y luego al nodo 107. Esto significa que el valor correcto de entrada es 107.
+
+Por lo tanto, para desactivar la fase secreta, la entrada correcta es: cualquier_string 107 abrete_sesamo.
