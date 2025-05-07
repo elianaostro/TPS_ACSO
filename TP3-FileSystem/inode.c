@@ -3,7 +3,9 @@
 #include <stdlib.h>
 #include "inode.h"
 #include "diskimg.h"
-
+#define ENTRIES_PER_BLOCK (DISKIMG_SECTOR_SIZE / sizeof(uint16_t))
+#define MAX_DIRECT_BLOCKS 7
+#define MAX_DIRECT_ENTRIES (MAX_DIRECT_BLOCKS * ENTRIES_PER_BLOCK)
 
 /**
  * TODO
@@ -35,7 +37,7 @@ int inode_iget(struct unixfilesystem *fs, int inumber, struct inode *inp) {
  */
 int inode_indexlookup(struct unixfilesystem *fs, struct inode *inp, int blockNum) {
     if (inp->i_mode & ILARG) {
-        if (blockNum < 7 * (DISKIMG_SECTOR_SIZE / sizeof(uint16_t))) {
+        if (blockNum < (int)MAX_DIRECT_ENTRIES) {
             // Bloques indirectos simples (primeros 7)
             int which_indirect = blockNum / (DISKIMG_SECTOR_SIZE / sizeof(uint16_t));
             int offset_in_indirect = blockNum % (DISKIMG_SECTOR_SIZE / sizeof(uint16_t));
