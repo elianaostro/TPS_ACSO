@@ -146,6 +146,157 @@ void recursive_directory_check(struct unixfilesystem *fs, int inumber, char *pat
     }
 }
 
+// Función para verificar los puntos extra del enunciado
+void test_extra_points(struct unixfilesystem *fs) {
+    printf("=== VERIFICACIÓN DE PUNTOS EXTRA DEL ENUNCIADO ===\n");
+    
+    // 1. Verificar que el inodo 1 es el directorio raíz
+    printf("Verificando que el inodo 1 es el directorio raíz:\n");
+    struct inode root_inode;
+    if (inode_iget(fs, ROOT_INUMBER, &root_inode) < 0) {
+        printf("  ERROR: No se pudo obtener el inodo raíz\n");
+    } else {
+        if ((root_inode.i_mode & IFMT) == IFDIR) {
+            printf("  OK: El inodo 1 es un directorio\n");
+        } else {
+            printf("  ERROR: El inodo 1 no es un directorio\n");
+        }
+    }
+    
+    // 2. Verificar archivos normales vs archivos grandes
+    printf("Buscando archivos para verificar modos de direccionamiento:\n");
+    
+    // Buscar un archivo normal (sin ILARG)
+    int normal_file = pathname_lookup(fs, "/etc/passwd");
+    if (normal_file > 0) {
+        struct inode normal_inode;
+        if (inode_iget(fs, normal_file, &normal_inode) < 0) {
+            printf("  ERROR: No se pudo leer el inodo del archivo normal\n");
+        } else {
+            printf("  Archivo normal encontrado (inodo %d):\n", normal_file);
+            printf("    Modo: 0x%x\n", normal_inode.i_mode);
+            if (!(normal_inode.i_mode & ILARG)) {
+                printf("    OK: El archivo es de tipo normal (sin ILARG)\n");
+                
+                // Verificar que los bloques son directos
+                int size = inode_getsize(&normal_inode);
+                int num_blocks = (size + DISKIMG_SECTOR_SIZE - 1) / DISKIMG_SECTOR_SIZE;
+                printf("    Tamaño: %d bytes, %d bloques\n", size, num_blocks);
+                
+                if (num_blocks > 0 && num_blocks <= 8) {
+                    char buf[DISKIMG_SECTOR_SIZE];
+                    int success = 1;
+                    for (int i = 0; i < num_blocks && i < 8; i++) {
+                        if (file_getblock(fs, normal_file, i, buf) < 0) {
+                            printf("    ERROR: No se pudo leer el bloque %d\n", i);
+                            success = 0;
+                            break;
+                        }
+                    }
+                    if (success) {
+                        printf("    OK: Todos los bloques son accesibles directamente\n");
+                    }
+                }
+            } else {
+                printf("    ERROR: El archivo debería ser de tipo normal\n");
+            }
+        }
+    } else {
+        printf("  No se encontró un archivo normal para probar\n");
+    }
+    
+    // Buscar un archivo grande (con ILARG)
+    int large_file = pathname_lookup(fs, "/verybig");
+    if (large_file <= 0) large_file = pathname_lookup(fs, "/bigfile");
+    
+    if (large_file > 0) {
+        struct inode large_inode;
+        if (inode_iget(fs, large_file, &large_inode) < 0) {
+            printf("  ERROR: No se pudo leer el inodo del archivo grande\n");
+        } else {
+            printf("  Archivo grande encontrado (inodo %d):\n", large_file);
+            printf("    Modo: 0x%x\n", large_inode.i_mode);
+            if (large_inode.i_mode & ILARG) {
+                printf("    OK: El archivo es de tipo grande (ILARG)\n");
+                
+                // Verificar esquema de direccionamiento indirecto
+                int size = inode_getsize(&large_inode);
+                int num_blocks = (size + DISKIMG_SECTOR_SIZE - 1) / DISKIMG_SECTOR_SIZE;
+                printf("    Tamaño: %d bytes, %d bloques\n", size, num_blocks);
+                
+                // Probar acceso a bloques para verificar el direccionamiento indirecto
+                char buf[DISKIMG_SECTOR_SIZE];
+                
+                // Probar bloques de indirección
+                if (num_blocks > 7*256) {
+                    printf("    Probando bloque doblemente indirecto (%d)...\n", 7*256);
+                    if (file_getblock(fs, large_file, 7*256, buf) >= 0) {
+                        printf("    OK: Se pudo acceder a un bloque doblemente indirecto\n");
+                    } else {
+                        printf("    ERROR: No se pudo acceder al bloque doblemente indirecto\n");
+                    }
+                }
+                
+                for (int i = 0; i < 7 && i*256 < num_blocks; i++) {
+                    printf("    Probando bloque del indirecto %d (%d)...\n", i, i*256);
+                    if (file_getblock(fs, large_file, i*256, buf) >= 0) {
+                        printf("    OK: Se pudo acceder al bloque indirecto %d\n", i);
+                    } else {
+                        printf("    ERROR: No se pudo acceder al bloque indirecto %d\n", i);
+                    }
+                }
+            } else {
+                printf("    ERROR: El archivo debería ser de tipo grande\n");
+            }
+        }
+    } else {
+        printf("  No se encontró un archivo grande para probar\n");
+    }
+    
+    // 3. Verificar que file_getblock retorna la cantidad correcta de bytes
+    printf("Verificando que file_getblock retorna la cantidad correcta de bytes:\n");
+    int test_file = normal_file > 0 ? normal_file : (large_file > 0 ? large_file : ROOT_INUMBER);
+    
+    if (test_file > 0) {
+        struct inode test_inode;
+        if (inode_iget(fs, test_file, &test_inode) < 0) {
+            printf("  ERROR: No se pudo leer el inodo del archivo de prueba\n");
+        } else {
+            int size = inode_getsize(&test_inode);
+            int num_blocks = (size + DISKIMG_SECTOR_SIZE - 1) / DISKIMG_SECTOR_SIZE;
+            
+            if (num_blocks > 0) {
+                char buf[DISKIMG_SECTOR_SIZE];
+                
+                // Probar el primer bloque (debería ser DISKIMG_SECTOR_SIZE si hay más de un bloque)
+                int bytes_first = file_getblock(fs, test_file, 0, buf);
+                printf("  Primer bloque: %d bytes", bytes_first);
+                if (num_blocks > 1 && bytes_first == DISKIMG_SECTOR_SIZE) {
+                    printf(" (OK: bloque completo)\n");
+                } else if (num_blocks == 1 && bytes_first == size) {
+                    printf(" (OK: tamaño correcto para archivo de un solo bloque)\n");
+                } else {
+                    printf(" (ERROR: tamaño incorrecto)\n");
+                }
+                
+                // Probar el último bloque (debería ser el residuo si el archivo no es múltiplo exacto del tamaño del bloque)
+                if (num_blocks > 1) {
+                    int bytes_last = file_getblock(fs, test_file, num_blocks - 1, buf);
+                    int expected = size % DISKIMG_SECTOR_SIZE;
+                    if (expected == 0) expected = DISKIMG_SECTOR_SIZE;
+                    
+                    printf("  Último bloque: %d bytes", bytes_last);
+                    if (bytes_last == expected) {
+                        printf(" (OK: tamaño correcto)\n");
+                    } else {
+                        printf(" (ERROR: se esperaban %d bytes)\n", expected);
+                    }
+                }
+            }
+        }
+    }
+}
+
 void test_filesystem_consistency(struct unixfilesystem *fs) {
     printf("=== VERIFICACIÓN DE CONSISTENCIA DEL FILESYSTEM ===\n");
     recursive_directory_check(fs, ROOT_INUMBER, "", 0);
@@ -183,6 +334,9 @@ int main(int argc, char *argv[]) {
     printf("\n");
     
     test_filesystem_consistency(fs);
+    printf("\n");
+    
+    test_extra_points(fs); 
     
     int err = diskimg_close(fd);
     if (err < 0) fprintf(stderr, "Error closing %s\n", diskpath);
