@@ -14,26 +14,29 @@
 #include <functional>  // for the function template used in the schedule signature
 #include <thread>      // for thread
 #include <vector>      // for vector
+#include <queue>       // for queue
+#include <mutex>       // for mutex
+#include <condition_variable> // for condition_variable
 #include "Semaphore.h" // for Semaphore
 
 using namespace std;
-
 
 /**
  * @brief Represents a worker in the thread pool.
  * 
  * The `worker_t` struct contains information about a worker 
- * thread in the thread pool. Should be includes the thread object, 
+ * thread in the thread pool. Includes the thread object, 
  * availability status, the task to be executed, and a semaphore 
- * (or condition variable) to signal when work is ready for the 
- * worker to process.
+ * to signal when work is ready for the worker to process.
  */
 typedef struct worker {
-    thread ts;
-    function<void(void)> thunk;
-    /**
-     * Complete the definition of the worker_t struct here...
-     **/
+    thread ts;                          // thread handle
+    function<void(void)> thunk;         // task to execute
+    bool available;                     // worker availability status
+    Semaphore workReady;                // semaphore to signal work is ready
+    Semaphore workDone;                 // semaphore to signal work is completed
+    
+    worker() : available(true), workReady(0), workDone(0) {}
 } worker_t;
 
 class ThreadPool {
@@ -70,15 +73,26 @@ class ThreadPool {
 
     void worker(int id);
     void dispatcher();
+    
     thread dt;                              // dispatcher thread handle
-    vector<worker_t> wts;                   // worker thread handles. you may want to change/remove this
+    vector<worker_t> wts;                   // worker thread handles
     bool done;                              // flag to indicate the pool is being destroyed
+    
+    // Task queue management
+    queue<function<void(void)>> taskQueue;  // queue of tasks to execute
     mutex queueLock;                        // mutex to protect the queue of tasks
-
-    /* It is incomplete, there should be more private variables to manage the structures... 
-    * *
-    */
-  
+    condition_variable taskAvailable;       // notify dispatcher when tasks are available
+    
+    // Worker availability management
+    queue<int> availableWorkers;            // queue of available worker IDs
+    mutex workerLock;                       // mutex to protect worker availability
+    condition_variable workerAvailable;     // notify dispatcher when workers are available
+    
+    // Wait functionality
+    int activeTasks;                        // number of tasks currently being executed
+    mutex waitLock;                         // mutex to protect wait state
+    condition_variable allTasksDone;        // notify when all tasks are completed
+    
     /* ThreadPools are the type of thing that shouldn't be cloneable, since it's
     * not clear what it means to clone a ThreadPool (should copies of all outstanding
     * functions to be executed be copied?).
